@@ -30,3 +30,12 @@
       traefik.http.routers.actualbudget.rule: "Host(`{{ actualbudget.subdomain }}.{{ domain }}`)"
       traefik.http.routers.actualbudget.entrypoints: "websecure"
       traefik.http.services.actualbudget.loadbalancer.server.port: "5006"
+      # Homer
+      homer.enable: "true"
+      homer.name: "Actual Budget"
+      homer.service: "Tools"
+      homer.priority: "2"
+      homer.subtitle: "A local-first personal finance app"
+      homer.url: "https://{{ actualbudget.subdomain }}.{{ domain }}"
+      homer.logo: "assets/homer-icons/png/actual-budget.png"
+      homer.target: "_blank"
