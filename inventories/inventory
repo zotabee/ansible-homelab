@@ -1,8 +1,2 @@
 [all]
-ansible-homelab ansible_host=localhost
-
-[homelab]
-ansible-homelab
-
-[targets]
 localhost ansible_connection=local
