@@ -1,4 +1,4 @@
 ---
 - name: Ansible Homelab
-  hosts: all
+  hosts: localhost
   vars_files: ["defaults/settings.yml.default", "settings.yml"]
