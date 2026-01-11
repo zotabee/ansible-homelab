@@ -16,7 +16,7 @@
     image: "actualbudget/actual-server:{{ actualbudget.tag }}"
     restart_policy: unless-stopped
     volumes:
-      - "{{ actualbudget.folder }}/data"
+      - "{{ actualbudget.folder }}/data:/data:rw"
     healthcheck:
       test: ['CMD-SHELL', 'node src/scripts/health-check.js']
       interval: 60s
