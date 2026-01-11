@@ -14,7 +14,7 @@
   community.docker.docker_container:
     name: actualbudget
     image: "actualbudget/actual-server:{{ actualbudget.tag }}"
-    pull: yes
+    pull: true
     recreate: true
     restart_policy: unless-stopped
     state: started
@@ -23,7 +23,7 @@
     networks:
       - name: web
         aliases:
-          - actualbudget    
+          - actualbudget
     healthcheck:
       test: ['CMD-SHELL', 'node src/scripts/health-check.js']
       interval: 60s
