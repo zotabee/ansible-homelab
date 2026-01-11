@@ -2,4 +2,3 @@
 - name: Ansible Homelab
   hosts: all
   vars_files: ["defaults/settings.yml.default", "settings.yml"]
-  roles:
