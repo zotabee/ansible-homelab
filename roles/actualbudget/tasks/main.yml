@@ -17,14 +17,13 @@
     pull: yes
     recreate: true
     restart_policy: unless-stopped
+    state: started
     volumes:
       - "{{ actualbudget.folder }}/data:/data:rw"
     networks:
       - name: web
         aliases:
-          - actualbudget
-    restart_policy: unless-stopped
-    state: started
+          - actualbudget    
     healthcheck:
       test: ['CMD-SHELL', 'node src/scripts/health-check.js']
       interval: 60s
