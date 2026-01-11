@@ -1,0 +1,8 @@
+---
+group: docker
+user: debian
+uid: 1000
+gid: 998
+domain: example.com
+data_folder: /mnt/storage
+tz: "Europe/Zurich"
