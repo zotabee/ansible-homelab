@@ -4,4 +4,4 @@
   vars_files: ["defaults/settings.yml.default", "settings.yml"]
   roles:
     # Applications roles
-    - { role: actualbudget, tags: ["extra", "actualbudget"] }
+    - {role: actualbudget, tags: ["extra", "actualbudget"]}
