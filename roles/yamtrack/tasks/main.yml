@@ -14,7 +14,7 @@
 - name: Create YamTrack redis Docker Container
   community.docker.docker_container:
     name: yamtrack-redis
-    image: yamtrack-redis:8-alpine
+    image: redis:8-alpine
     pull: true
     volumes:
       - "{{ yamtrack.folder }}/redis:/data"
