@@ -27,7 +27,7 @@
 - name: Create YamTrack Docker Container
   community.docker.docker_container:
     name: yamtrack
-    image: ghcr.io/fuzzygrim/yamtrack:{{ yamtrack.tag }}"
+    image: "ghcr.io/fuzzygrim/yamtrack:{{ yamtrack.tag }}"
     pull: true
     restart_policy: unless-stopped
     volumes:
