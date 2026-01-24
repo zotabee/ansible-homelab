@@ -1,0 +1,49 @@
+---
+- name: Create Actual Budget Directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ user }}"
+    group: "{{ group }}"
+    mode: "0775"
+    recurse: true
+  with_items:
+    - "{{ actualbudget.folder }}/data"
+
+- name: Create Actual Budget Docker Container
+  community.docker.docker_container:
+    name: actualbudget
+    image: "actualbudget/actual-server:{{ actualbudget.tag }}"
+    pull: true
+    recreate: true
+    restart_policy: unless-stopped
+    state: started
+    volumes:
+      - "{{ actualbudget.folder }}/data:/data:rw"
+    networks:
+      - name: web
+        aliases:
+          - actualbudget
+    healthcheck:
+      test: ['CMD-SHELL', 'node src/scripts/health-check.js']
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    labels:
+      # Traefik
+      traefik.enable: "true"
+      traefik.docker.network: "web"
+      traefik.http.routers.actualbudget.rule: "Host(`{{ actualbudget.subdomain }}.{{ domain }}`)"
+      traefik.http.routers.actualbudget.entrypoints: "websecure"
+      traefik.http.routers.actualbudget.middlewares: "authelia@docker"
+      traefik.http.services.actualbudget.loadbalancer.server.port: "5006"
+      # Homer
+      homer.enable: "true"
+      homer.name: "Actual Budget"
+      homer.service: "Tools"
+      homer.priority: "2"
+      homer.subtitle: "A local-first personal finance app"
+      homer.url: "https://{{ actualbudget.subdomain }}.{{ domain }}"
+      homer.logo: "assets/homer-icons/png/actual-budget.png"
+      homer.target: "_blank"
