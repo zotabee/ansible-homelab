@@ -10,3 +10,7 @@ actualbudget:
   tag: latest
   folder: /opt/actualbudget
   subdomain: actualbudget
+homebox:
+  tag: latest
+  folder: /opt/homebox
+  subdomain: homebox
