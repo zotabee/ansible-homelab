@@ -36,6 +36,7 @@
       traefik.docker.network: "web"
       traefik.http.routers.actualbudget.rule: "Host(`{{ actualbudget.subdomain }}.{{ domain }}`)"
       traefik.http.routers.actualbudget.entrypoints: "websecure"
+      traefik.http.routers.actualbudget.middlewares: "authelia@docker"
       traefik.http.services.actualbudget.loadbalancer.server.port: "5006"
       # Homer
       homer.enable: "true"
