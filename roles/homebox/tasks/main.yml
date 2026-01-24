@@ -3,6 +3,10 @@
   ansible.builtin.file:
     path: "{{ item }}"
     state: directory
+    owner: "{{ user }}"
+    group: "{{ group }}"
+    mode: "0775"
+    recurse: true
   with_items:
     - "{{ homebox.folder }}"
 
