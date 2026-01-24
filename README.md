@@ -51,6 +51,7 @@ ansible-lint
 
 # ansible-playbook --check (against prod)
 ansible-playbook ansible-homelab.yml --check
+ansible-playbook ansible-homelab.yml --tags=homebox --check
 ```
 
 ## Credits
