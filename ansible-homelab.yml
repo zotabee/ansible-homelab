@@ -6,3 +6,4 @@
     # Applications roles
     - {role: actualbudget, tags: ["extra", "actualbudget"]}
     - {role: homebox, tags: ["extra", "homebox"]}
+    - {role: yamtrack, tags: ["extra", "yamtrack"]}
