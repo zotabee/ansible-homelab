@@ -34,6 +34,7 @@
       - "{{ yamtrack.folder }}/data:/yamtrack/db"
     env:
       SECRET: "{{ yamtrack.secret | string }}"
+      REDIS_URL: "redis://yamtrack-redis:6379"
       URLS: "https://{{ yamtrack.subdomain }}.{{ domain }}"
       TMDB_API: "{{ yamtrack.tmdb_api if yamtrack.tmdb_api else omit }}"
       TRAKT_API: "{{ yamtrack.trakt_api if yamtrack.trakt_api else omit }}"
