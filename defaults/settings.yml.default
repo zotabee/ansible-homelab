@@ -14,3 +14,15 @@ homebox:
   tag: latest
   folder: /opt/homebox
   subdomain: homebox
+yamtrack:
+  tag: latest
+  folder: /opt/yamtrack
+  subdomain: yamtrack
+  secret: MyYamtrackSecret
+  tmdb_api: "" # A default is provided
+  trakt_api: ""
+  mal_api: "" # A default is provided
+  igdb_id: "" # A default is provided
+  igdb_secret: "" # A default is provided
+  simkl_id: "" # Only needed for importing media from Simkl, a default is provided
+  simkl_secret: "" # Only needed for importing media from Simkl, a default is provided
