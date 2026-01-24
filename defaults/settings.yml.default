@@ -6,3 +6,7 @@ gid: 998
 domain: example.com
 data_folder: /mnt/storage
 tz: "Europe/Zurich"
+actualbudget:
+  tag: latest
+  folder: /opt/actualbudget
+  subdomain: actualbudget

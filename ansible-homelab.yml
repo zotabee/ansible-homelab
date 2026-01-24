@@ -2,3 +2,6 @@
 - name: Ansible Homelab
   hosts: localhost
   vars_files: ["defaults/settings.yml.default", "settings.yml"]
+  roles:
+    # Applications roles
+    - {role: actualbudget, tags: ["extra", "actualbudget"]}
