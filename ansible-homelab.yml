@@ -5,3 +5,4 @@
   roles:
     # Applications roles
     - {role: actualbudget, tags: ["extra", "actualbudget"]}
+    - {role: homebox, tags: ["extra", "homebox"]}

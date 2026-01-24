@@ -1,0 +1,41 @@
+---
+- name: Create HomeBox Directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+  with_items:
+    - "{{ homebox.folder }}"
+
+- name: HomeBox Docker Container
+  community.docker.docker_container:
+    name: homebox
+    image: "ghcr.io/sysadminsmedia/homebox:{{ homebox.tag }}"
+    pull: true
+    volumes:
+      - "{{ homebox.folder }}:/data:rw"
+    networks:
+      - name: web
+        aliases:
+          - homebox
+    env:
+      HBOX_LOG_LEVEL: "info"
+      HBOX_LOG_FORMAT: "text"
+      HBOX_WEB_MAX_FILE_UPLOAD: "10"
+    restart_policy: unless-stopped
+    labels:
+      # Traefik
+      traefik.enable: "true"
+      traefik.docker.network: "web"
+      traefik.http.routers.homebox.rule: "Host(`{{ homebox.subdomain }}.{{ domain }}`)"
+      traefik.http.routers.homebox.entrypoints: "websecure"
+      traefik.http.routers.homebox.middlewares: "authelia@docker"
+      traefik.http.services.homebox.loadbalancer.server.port: "7745"
+      # Homer
+      homer.enable: "true"
+      homer.name: "HomeBox"
+      homer.service: "Tools"
+      homer.priority: "2"
+      homer.subtitle: "The inventory and organization system built for the Home User!"
+      homer.url: "https://{{ homebox.subdomain }}.{{ domain }}"
+      homer.logo: "assets/homer-icons/png/homebox.svg"
+      homer.target: "_blank"
