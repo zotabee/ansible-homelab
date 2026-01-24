@@ -31,7 +31,7 @@ All Ansible playbooks and yaml files are checked and fully linted through:
 
 | Command  | Passed |
 | ------------- | ------------- |
-| yamlint  | ✅  |
+| yamllint  | ✅  |
 | ansible-playbook --syntax-check  | ✅  |
 | ansible-lint (production level) | ✅  |
 | ansible-playbook --check (against prod)  | ✅  |
