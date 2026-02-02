@@ -61,5 +61,5 @@
       homer.priority: "2"
       homer.subtitle: "A self hosted media tracker"
       homer.url: "https://{{ yamtrack.subdomain }}.{{ domain }}"
-      homer.logo: "assets/homer-icons/png/yamtrack.svg"
+      homer.logo: "assets/homer-icons/svg/yamtrack.svg"
       homer.target: "_blank"

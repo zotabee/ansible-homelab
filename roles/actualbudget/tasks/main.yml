@@ -45,5 +45,5 @@
       homer.priority: "2"
       homer.subtitle: "A local-first personal finance app"
       homer.url: "https://{{ actualbudget.subdomain }}.{{ domain }}"
-      homer.logo: "assets/homer-icons/png/actual-budget.png"
+      homer.logo: "assets/homer-icons/svg/actual-budget.svg"
       homer.target: "_blank"
