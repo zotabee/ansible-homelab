@@ -14,6 +14,19 @@ homebox:
   tag: latest
   folder: /opt/homebox
   subdomain: homebox
+whalevane:
+  tag: "1.8.8" # Pin a released version; never latest
+  folder: /opt/whalevane
+  subdomain: whalevane
+  send: false # true only at cutover: sends Telegram and starts the watchdog
+  ghcr_user: zotabee
+  ghcr_token: "" # Classic token with read:packages only; set it in settings.yml
+  homer_logo: "" # e.g. assets/homer-icons/svg/<file>.svg; empty shows no logo
+  crawl_sources:
+    - binance.copytrading
+    - binance.smartmoney
+    - hyperliquid.perps
+    - bybit.copytrading
 yamtrack:
   tag: latest
   folder: /opt/yamtrack

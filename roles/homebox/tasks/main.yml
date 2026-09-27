@@ -38,7 +38,7 @@
       homer.enable: "true"
       homer.name: "HomeBox"
       homer.service: "Tools"
-      homer.priority: "2"
+      homer.priority: "25"
       homer.subtitle: "The inventory and organization system built for the Home User!"
       homer.url: "https://{{ homebox.subdomain }}.{{ domain }}"
       homer.logo: "assets/homer-icons/svg/homebox.svg"

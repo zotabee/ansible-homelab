@@ -1,0 +1,311 @@
+---
+- name: Check Whalevane Settings
+  ansible.builtin.assert:
+    that:
+      - whalevane.tag | string != "latest"
+      - whalevane.ghcr_token | length > 0
+      - uid | int == 1000
+    fail_msg: >-
+      Pin whalevane.tag to a released version, set whalevane.ghcr_token (read:packages)
+      in settings.yml, and keep uid at 1000: the image runs as uid 1000.
+    quiet: true
+
+- name: Create Whalevane Directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ user }}"
+    group: "{{ group }}"
+    mode: "0750"
+  with_items:
+    - "{{ whalevane.folder }}"
+    - "{{ whalevane.folder }}/config"
+    - "{{ whalevane.folder }}/data"
+    - "{{ whalevane.folder }}/watchdog"
+    - "{{ whalevane.folder }}/backups"
+
+# The settings and trader list hold credentials and are placed by hand from
+# whalevane's config/production; the role checks them and never writes them.
+- name: Check Whalevane Configuration Files
+  ansible.builtin.stat:
+    path: "{{ whalevane.folder }}/config/{{ item }}"
+  register: whalevane_config_files
+  with_items:
+    - app.env
+    - traders.yaml
+
+- name: Require Whalevane Configuration Files
+  ansible.builtin.assert:
+    that: item.stat.exists and item.stat.isreg
+    fail_msg: "Missing {{ item.item }}: copy it into {{ whalevane.folder }}/config first."
+    quiet: true
+  loop: "{{ whalevane_config_files.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Restrict Whalevane Configuration Files
+  ansible.builtin.file:
+    path: "{{ whalevane.folder }}/config/{{ item }}"
+    owner: "{{ user }}"
+    group: "{{ group }}"
+    mode: "0600"
+  with_items:
+    - app.env
+    - traders.yaml
+
+- name: Log In to GitHub Container Registry
+  community.docker.docker_login:
+    registry_url: ghcr.io
+    username: "{{ whalevane.ghcr_user }}"
+    password: "{{ whalevane.ghcr_token }}"
+  no_log: true
+
+- name: Pull Whalevane Image
+  community.docker.docker_image:
+    name: ghcr.io/zotabee/whalevane
+    tag: "{{ whalevane.tag | string }}"
+    source: pull
+
+# The same checks the manual upgrade runs, inside the image about to be used.
+- name: Whalevane Preflight
+  when: not ansible_check_mode
+  block:
+    - name: Check Whalevane Image Version
+      community.docker.docker_container:
+        name: whalevane-preflight
+        image: "ghcr.io/zotabee/whalevane:{{ whalevane.tag }}"
+        command: ["--version"]
+        network_mode: none
+        detach: false
+        cleanup: true
+      register: whalevane_version
+
+    - name: Require Expected Whalevane Version
+      ansible.builtin.assert:
+        that: whalevane_version.container.Output | trim == "whalevane " ~ whalevane.tag
+        fail_msg: "Image answered {{ whalevane_version.container.Output | trim }}"
+        quiet: true
+
+    - name: Run Whalevane Doctor
+      community.docker.docker_container:
+        name: whalevane-preflight
+        image: "ghcr.io/zotabee/whalevane:{{ whalevane.tag }}"
+        command: ["doctor"]
+        network_mode: none
+        detach: false
+        cleanup: true
+
+    - name: Check Existing Whalevane Database
+      ansible.builtin.stat:
+        path: "{{ whalevane.folder }}/data/tracker.sqlite3"
+      register: whalevane_database
+
+    - name: Back Up Whalevane Data
+      when: whalevane_database.stat.exists
+      block:
+        - name: Name Whalevane Backup Snapshot
+          ansible.builtin.set_fact:
+            whalevane_snapshot: "{{ whalevane.tag }}-{{ now(utc=true, fmt='%Y%m%dT%H%M%SZ') }}"
+
+        - name: Read Whalevane Crawler State
+          community.docker.docker_container_info:
+            name: whalevane-crawler
+          register: whalevane_crawler
+
+        # The crawler rewrites the analytics store; the backup runs without it.
+        # It is started again by its own task below.
+        - name: Stop Whalevane Crawler for Backup
+          community.docker.docker_container:
+            name: whalevane-crawler
+            state: stopped
+          when: whalevane_crawler.exists
+
+        - name: Create Whalevane Backup
+          community.docker.docker_container:
+            name: whalevane-backup
+            image: "ghcr.io/zotabee/whalevane:{{ whalevane.tag }}"
+            command: ["backup", "/backup/{{ whalevane_snapshot }}"]
+            network_mode: none
+            volumes:
+              - "{{ whalevane.folder }}/data:/data:rw"
+              - "{{ whalevane.folder }}/backups:/backup:rw"
+            detach: false
+            cleanup: true
+
+        - name: Verify Whalevane Backup
+          community.docker.docker_container:
+            name: whalevane-backup
+            image: "ghcr.io/zotabee/whalevane:{{ whalevane.tag }}"
+            command: ["backup", "--verify", "/backup/{{ whalevane_snapshot }}"]
+            network_mode: none
+            volumes:
+              - "{{ whalevane.folder }}/backups:/backup:rw"
+            detach: false
+            cleanup: true
+
+# Every container: pinned image, excluded from Watchtower, rotated logs.
+- name: Create Whalevane Tracker Docker Container
+  community.docker.docker_container:
+    name: whalevane-tracker
+    image: "ghcr.io/zotabee/whalevane:{{ whalevane.tag }}"
+    # Without --no-send it sends to Telegram and reads the session inbox:
+    # only one tracker may do that, so send stays false until cutover.
+    command: "{{ ['run'] if whalevane.send else ['run', '--no-send'] }}"
+    restart_policy: unless-stopped
+    state: started
+    memory: 512M
+    log_driver: json-file
+    log_options:
+      max-size: 10m
+      max-file: "3"
+    volumes:
+      - "{{ whalevane.folder }}/data:/data:rw"
+      - "{{ whalevane.folder }}/config/app.env:/app/.env:ro"
+      - "{{ whalevane.folder }}/config/traders.yaml:/app/config/traders.yaml:ro"
+    env:
+      WV_SETTINGS_FILE: /app/.env
+      WV_DATA_DIR: /data
+      WV_LOG_JSON: "true"
+    networks:
+      - name: web
+        aliases:
+          - whalevane-tracker
+    labels:
+      com.centurylinklabs.watchtower.enable: "false"
+
+- name: Create Whalevane Crawler Docker Container
+  community.docker.docker_container:
+    name: whalevane-crawler
+    image: "ghcr.io/zotabee/whalevane:{{ whalevane.tag }}"
+    entrypoint: ["sh"]
+    command:
+      - -c
+      - >-
+        while true; do python -m whalevane crawl --once
+        {{ whalevane.crawl_sources | map('regex_replace', '^', '--source ') | join(' ') }}
+        || echo "sweep failed"; sleep 86400; done
+    restart_policy: unless-stopped
+    state: started
+    memory: 1G
+    log_driver: json-file
+    log_options:
+      max-size: 10m
+      max-file: "3"
+    volumes:
+      - "{{ whalevane.folder }}/data:/data:rw"
+      - "{{ whalevane.folder }}/config/traders.yaml:/app/config/traders.yaml:ro"
+    env:
+      WV_DATA_DIR: /data
+      WV_LOG_JSON: "true"
+    networks:
+      - name: web
+        aliases:
+          - whalevane-crawler
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - |
+          import pathlib, sys, time
+          files = list(pathlib.Path("/data/analytics").rglob("*.parquet"))
+          newest = max((f.stat().st_mtime for f in files), default=0)
+          sys.exit(0 if newest and time.time() - newest < 172800 else 1)
+      interval: 30m
+      timeout: 10s
+      start_period: 10m
+      retries: 3
+    labels:
+      com.centurylinklabs.watchtower.enable: "false"
+
+- name: Create Whalevane UI Docker Container
+  community.docker.docker_container:
+    name: whalevane-ui
+    image: "ghcr.io/zotabee/whalevane:{{ whalevane.tag }}"
+    command: ["serve", "--host", "0.0.0.0"]
+    restart_policy: unless-stopped
+    state: started
+    memory: 512M
+    log_driver: json-file
+    log_options:
+      max-size: 10m
+      max-file: "3"
+    volumes:
+      - "{{ whalevane.folder }}/data:/data:rw"
+      - "{{ whalevane.folder }}/config/app.env:/app/.env:ro"
+      - "{{ whalevane.folder }}/config/traders.yaml:/app/config/traders.yaml:ro"
+    env:
+      WV_SETTINGS_FILE: /app/.env
+      WV_DATA_DIR: /data
+      WV_LOG_JSON: "true"
+    networks:
+      - name: web
+        aliases:
+          - whalevane-ui
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - |
+          import sys, urllib.request
+          sys.exit(0 if urllib.request.urlopen("http://127.0.0.1:8080/healthz", timeout=5).status == 200 else 1)
+      interval: 1m
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+    labels:
+      com.centurylinklabs.watchtower.enable: "false"
+      # Traefik
+      traefik.enable: "true"
+      traefik.docker.network: "web"
+      traefik.http.routers.whalevane.rule: "Host(`{{ whalevane.subdomain }}.{{ domain }}`)"
+      traefik.http.routers.whalevane.entrypoints: "websecure"
+      traefik.http.routers.whalevane.middlewares: "authelia@docker"
+      traefik.http.services.whalevane.loadbalancer.server.port: "8080"
+      # Homer
+      homer.enable: "true"
+      homer.name: "Whalevane"
+      homer.service: "Tools"
+      homer.priority: "10"
+      homer.subtitle: "Perpetual-futures trader tracker"
+      homer.url: "https://{{ whalevane.subdomain }}.{{ domain }}"
+      homer.logo: "{{ whalevane.homer_logo }}"
+      homer.target: "_blank"
+
+# The watchdog alerts through the same Telegram bot, so it runs only with send.
+- name: Create Whalevane Watchdog Docker Container
+  community.docker.docker_container:
+    name: whalevane-watchdog
+    image: "ghcr.io/zotabee/whalevane:{{ whalevane.tag }}"
+    command: ["watch"]
+    restart_policy: unless-stopped
+    state: "{{ 'started' if whalevane.send else 'absent' }}"
+    memory: 128M
+    log_driver: json-file
+    log_options:
+      max-size: 10m
+      max-file: "3"
+    volumes:
+      - "{{ whalevane.folder }}/data:/data:ro"
+      - "{{ whalevane.folder }}/watchdog:/watchdog:rw"
+      - "{{ whalevane.folder }}/config/app.env:/app/.env:ro"
+    env:
+      WV_SETTINGS_FILE: /app/.env
+      WV_DATA_DIR: /data
+      WV_LOG_JSON: "true"
+      WV_WATCHDOG__STATE_DIR: /watchdog
+      WV_WATCHDOG__UI_URL: http://whalevane-ui:8080/healthz
+      WV_WATCHDOG__SOURCES: "{{ whalevane.crawl_sources | to_json }}"
+    networks:
+      - name: web
+        aliases:
+          - whalevane-watchdog
+    healthcheck:
+      test: ["CMD", "python", "-m", "whalevane", "watch", "--healthcheck"]
+      interval: 1m
+      timeout: 10s
+      start_period: 1m
+      retries: 3
+    labels:
+      com.centurylinklabs.watchtower.enable: "false"

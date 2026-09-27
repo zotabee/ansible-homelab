@@ -42,7 +42,7 @@
       homer.enable: "true"
       homer.name: "Actual Budget"
       homer.service: "Tools"
-      homer.priority: "2"
+      homer.priority: "50"
       homer.subtitle: "A local-first personal finance app"
       homer.url: "https://{{ actualbudget.subdomain }}.{{ domain }}"
       homer.logo: "assets/homer-icons/svg/actual-budget.svg"
