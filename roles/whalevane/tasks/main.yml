@@ -23,6 +23,7 @@
     - "{{ whalevane.folder }}/data"
     - "{{ whalevane.folder }}/watchdog"
     - "{{ whalevane.folder }}/backups"
+    - "{{ whalevane.folder }}/logs"
 
 # The settings and trader list hold credentials and are placed by hand from
 # whalevane's config/production; the role checks them and never writes them.
@@ -142,6 +143,41 @@
               - "{{ whalevane.folder }}/backups:/backup:rw"
             detach: false
             cleanup: true
+
+# Recreating a container removes its log, and an image change recreates all
+# four. Each run keeps a copy first, whether or not it then recreates anything:
+# the tracker's log is about 12 MB a day, 1 MB gzipped. Skipped in check mode.
+- name: Archive Whalevane Container Logs
+  ansible.builtin.shell: |
+    set -o pipefail
+    docker container inspect {{ item }} >/dev/null 2>&1 || exit 0
+    image=$(docker container inspect --format '{% raw %}{{.Config.Image}}{% endraw %}' {{ item }})
+    stamp=$(date -u +%Y%m%dT%H%M%SZ)
+    docker logs --timestamps {{ item }} 2>&1 \
+      | gzip -9 > "{{ whalevane.folder }}/logs/{{ item }}-${image##*:}-${stamp}.log.gz"
+  args:
+    executable: /bin/bash
+  loop:
+    - whalevane-tracker
+    - whalevane-crawler
+    - whalevane-ui
+    - whalevane-watchdog
+  changed_when: true
+
+- name: Find Whalevane Log Archives Older Than 30 Days
+  ansible.builtin.find:
+    paths: "{{ whalevane.folder }}/logs"
+    patterns: "whalevane-*.log.gz"
+    age: 30d
+  register: whalevane_old_logs
+
+- name: Remove Whalevane Log Archives Older Than 30 Days
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ whalevane_old_logs.files }}"
+  loop_control:
+    label: "{{ item.path | basename }}"
 
 # Every container: pinned image, excluded from Watchtower, rotated logs.
 - name: Create Whalevane Tracker Docker Container
