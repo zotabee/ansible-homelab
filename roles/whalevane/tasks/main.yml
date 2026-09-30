@@ -192,9 +192,15 @@
 # keeps 10 files of 50 MB per container, the rotated ones compressed: over a
 # month of the tracker's log, so the archive above has no gap however long
 # since the last run (3 files of 10 MB held two and a half days).
+#
+# The tracker owns its state as <hostname>:<pid>. With the container id for
+# hostname, a tracker killed hard and recreated waited out its own old lease,
+# up to 15 minutes; with a fixed one it reclaims at once (whalevane 1.9.12).
+# No other container may be given this hostname.
 - name: Create Whalevane Tracker Docker Container
   community.docker.docker_container:
     name: whalevane-tracker
+    hostname: whalevane-tracker
     image: "ghcr.io/zotabee/whalevane:{{ whalevane.tag }}"
     # Without --no-send it sends to Telegram and reads the session inbox:
     # only one tracker may do that, so send stays false until cutover.
@@ -226,6 +232,11 @@
 # from the end of the last run, the start drifted by the run's own length each
 # day (27 minutes) and wandered across the tracker's 00:10 daily check. A time
 # `date` cannot read sleeps a day instead of looping without a pause.
+#
+# The crawl at a start is skipped when a whole one is under six hours old
+# (whalevane 1.9.12, which the option needs): every run of this role restarts
+# the crawler, and three runs in 35 minutes began three crawls. Only the
+# loop's first pass asks; the daily run always crawls.
 - name: Create Whalevane Crawler Docker Container
   community.docker.docker_container:
     name: whalevane-crawler
@@ -234,9 +245,11 @@
     command:
       - -c
       - >-
-        while true; do python -m whalevane crawl --once
+        recent="--unless-recent 6";
+        while true; do python -m whalevane crawl --once $recent
         {{ whalevane.crawl_sources | map('regex_replace', '^', '--source ') | join(' ') }}
         || echo "sweep failed";
+        recent="";
         at=$(date -u -d "{{ whalevane.crawl_at | default('02:30', true) }}" +%s)
         && sleep $(( (at - $(date -u +%s) + 86399) % 86400 + 1 ))
         || sleep 86400; done

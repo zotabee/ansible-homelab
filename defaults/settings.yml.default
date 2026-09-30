@@ -15,14 +15,14 @@ homebox:
   folder: /opt/homebox
   subdomain: homebox
 whalevane:
-  tag: "1.8.8" # Pin a released version; never latest
+  tag: "1.9.12" # Pin a released version, 1.9.12 or later; never latest
   folder: /opt/whalevane
   subdomain: whalevane
   send: false # true only at cutover: sends Telegram and starts the watchdog
   ghcr_user: zotabee
   ghcr_token: "" # Classic token with read:packages only; set it in settings.yml
   homer_logo: "" # e.g. assets/homer-icons/svg/<file>.svg; empty shows no logo
-  crawl_at: "02:30" # UTC, HH:MM: the daily crawl's start (it also crawls at each container start)
+  crawl_at: "02:30" # UTC, HH:MM: the daily crawl's start (a container start crawls too, unless a whole crawl is under 6 hours old)
   log_archive_days: 180 # How long the archived container logs in <folder>/logs are kept
   crawl_sources:
     - binance.copytrading
