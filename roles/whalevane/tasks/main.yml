@@ -209,6 +209,10 @@
     labels:
       com.centurylinklabs.watchtower.enable: "false"
 
+# A crawl at each start, then one a day at whalevane.crawl_at (UTC): counted
+# from the end of the last run, the start drifted by the run's own length each
+# day (27 minutes) and wandered across the tracker's 00:10 daily check. A time
+# `date` cannot read sleeps a day instead of looping without a pause.
 - name: Create Whalevane Crawler Docker Container
   community.docker.docker_container:
     name: whalevane-crawler
@@ -219,7 +223,10 @@
       - >-
         while true; do python -m whalevane crawl --once
         {{ whalevane.crawl_sources | map('regex_replace', '^', '--source ') | join(' ') }}
-        || echo "sweep failed"; sleep 86400; done
+        || echo "sweep failed";
+        at=$(date -u -d "{{ whalevane.crawl_at | default('02:30', true) }}" +%s)
+        && sleep $(( (at - $(date -u +%s) + 86399) % 86400 + 1 ))
+        || sleep 86400; done
     restart_policy: unless-stopped
     state: started
     memory: 1G

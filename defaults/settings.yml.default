@@ -22,6 +22,7 @@ whalevane:
   ghcr_user: zotabee
   ghcr_token: "" # Classic token with read:packages only; set it in settings.yml
   homer_logo: "" # e.g. assets/homer-icons/svg/<file>.svg; empty shows no logo
+  crawl_at: "02:30" # UTC, HH:MM: the daily crawl's start (it also crawls at each container start)
   crawl_sources:
     - binance.copytrading
     - binance.smartmoney
