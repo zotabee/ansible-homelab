@@ -10,6 +10,10 @@
       in settings.yml, and keep uid at 1000: the image runs as uid 1000.
     quiet: true
 
+# data/limits holds the request limits every process shares (1.10.7). It is
+# made here, owned by the image's uid, because the watchdog mounts it on its
+# own: a bind source Docker had to create would be root's, and the tracker
+# could not write in it.
 - name: Create Whalevane Directories
   ansible.builtin.file:
     path: "{{ item }}"
@@ -21,6 +25,7 @@
     - "{{ whalevane.folder }}"
     - "{{ whalevane.folder }}/config"
     - "{{ whalevane.folder }}/data"
+    - "{{ whalevane.folder }}/data/limits"
     - "{{ whalevane.folder }}/watchdog"
     - "{{ whalevane.folder }}/backups"
     - "{{ whalevane.folder }}/logs"
@@ -345,6 +350,8 @@
       homer.target: "_blank"
 
 # The watchdog alerts through the same Telegram bot, so it runs only with send.
+# Its application data stays read-only but for data/limits, where it books its
+# Telegram sends beside the tracker's (1.10.7).
 - name: Create Whalevane Watchdog Docker Container
   community.docker.docker_container:
     name: whalevane-watchdog
@@ -360,6 +367,7 @@
       compress: "true"
     volumes:
       - "{{ whalevane.folder }}/data:/data:ro"
+      - "{{ whalevane.folder }}/data/limits:/data/limits:rw"
       - "{{ whalevane.folder }}/watchdog:/watchdog:rw"
       - "{{ whalevane.folder }}/config/app.env:/app/.env:ro"
     env:
