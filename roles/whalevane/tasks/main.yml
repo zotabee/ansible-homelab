@@ -255,7 +255,7 @@
         {{ whalevane.crawl_sources | map('regex_replace', '^', '--source ') | join(' ') }}
         || echo "sweep failed";
         recent="";
-        at=$(date -u -d "{{ whalevane.crawl_at | default('02:30', true) }}" +%s)
+        at=$(date -u -d "{{ whalevane.crawl_at | default('01:30', true) }}" +%s)
         && sleep $(( (at - $(date -u +%s) + 86399) % 86400 + 1 ))
         || sleep 86400; done
     restart_policy: unless-stopped
