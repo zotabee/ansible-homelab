@@ -242,6 +242,11 @@
 # (whalevane 1.9.12, which the option needs): every run of this role restarts
 # the crawler, and three runs in 35 minutes began three crawls. Only the
 # loop's first pass asks; the daily run always crawls.
+#
+# Every pass after the first is the scheduled run, `--scheduled` (whalevane
+# 1.16.4, which the option needs): only it judges our returns against the
+# exchanges' own. An image before 1.16.4 refuses the option: rolling the tag
+# back below 1.16.4 needs this line back to `recent="";`.
 - name: Create Whalevane Crawler Docker Container
   community.docker.docker_container:
     name: whalevane-crawler
@@ -254,7 +259,7 @@
         while true; do python -m whalevane crawl --once $recent
         {{ whalevane.crawl_sources | map('regex_replace', '^', '--source ') | join(' ') }}
         || echo "sweep failed";
-        recent="";
+        recent="--scheduled";
         at=$(date -u -d "{{ whalevane.crawl_at | default('01:30', true) }}" +%s)
         && sleep $(( (at - $(date -u +%s) + 86399) % 86400 + 1 ))
         || sleep 86400; done
