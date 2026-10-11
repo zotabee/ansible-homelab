@@ -24,6 +24,7 @@ whalevane:
   homer_logo: "" # e.g. assets/homer-icons/svg/<file>.svg; empty shows no logo
   crawl_at: "02:30" # UTC, HH:MM: the daily crawl's start (a container start crawls too, unless a whole crawl is under 6 hours old)
   log_archive_days: 180 # How long the archived container logs in <folder>/logs are kept
+  backups_keep: 10 # How many automatic snapshots in <folder>/backups are kept; named ones (before-*, offhost-*) are never removed
   crawl_sources:
     - binance.copytrading
     - binance.smartmoney

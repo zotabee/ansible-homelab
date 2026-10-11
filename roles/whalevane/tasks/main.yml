@@ -149,6 +149,26 @@
             detach: false
             cleanup: true
 
+        # Each run adds a snapshot of about 200 MB, and none were ever removed.
+        # Once the new one is verified, keep only the newest whalevane.backups_keep
+        # automatic snapshots (<tag>-<UTC stamp>). Named ones such as before-* or
+        # offhost-* never match the pattern and are never touched.
+        - name: Find Automatic Whalevane Backup Snapshots
+          ansible.builtin.find:
+            paths: "{{ whalevane.folder }}/backups"
+            file_type: directory
+            patterns: '^(\d[^-]*|latest)-\d{8}T\d{6}Z$'
+            use_regex: true
+          register: whalevane_snapshots
+
+        - name: Remove Old Whalevane Backup Snapshots
+          ansible.builtin.file:
+            path: "{{ item.path }}"
+            state: absent
+          loop: "{{ (whalevane_snapshots.files | sort(attribute='mtime', reverse=true))[(whalevane.backups_keep | default(10) | int):] }}"
+          loop_control:
+            label: "{{ item.path | basename }}"
+
 # Recreating a container removes its log, and an image change recreates all
 # four. Each run first archives what each container logged since the run
 # before: consecutive pieces, no line twice and none missed, however often the
