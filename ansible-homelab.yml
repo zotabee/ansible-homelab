@@ -4,8 +4,8 @@
   vars_files: ["defaults/settings.yml.default", "settings.yml"]
   roles:
     # Applications roles
+    - {role: scrob, tags: ["extra", "scrob"]}
     - {role: actualbudget, tags: ["extra", "actualbudget"]}
     - {role: homebox, tags: ["extra", "homebox"]}
-    - {role: scrob, tags: ["extra", "scrob"]}
     - {role: whalevane, tags: ["extra", "whalevane"]}
     - {role: yamtrack, tags: ["extra", "yamtrack"]}

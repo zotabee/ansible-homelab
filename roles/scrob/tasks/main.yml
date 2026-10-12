@@ -83,8 +83,8 @@
 # Traefik routes only to a healthy container: the start interval runs the
 # first check seconds after a start, not a whole interval later.
 #
-# Not updated by Watchtower: each new image migrates the database, with no
-# way back. The role pulls scrob.tag when it runs.
+# SEEDbox's Watchtower updates it every night (tag latest): each new image
+# migrates the database, with no way back, so keep backups of postgres/ and data/.
 - name: Create Scrob Docker Container
   community.docker.docker_container:
     name: scrob
@@ -117,7 +117,6 @@
     labels: "{{ scrob_labels | combine(scrob_hook_labels if scrob.public_hooks | default(false) | bool else {}) }}"
   vars:
     scrob_labels:
-      com.centurylinklabs.watchtower.enable: "false"
       # Traefik
       traefik.enable: "true"
       traefik.docker.network: "web"
@@ -129,8 +128,8 @@
       # Homer
       homer.enable: "true"
       homer.name: "Scrob"
-      homer.service: "Tools"
-      homer.priority: "2"
+      homer.service: "Media"
+      homer.priority: "20"
       homer.subtitle: "Your personal Letterboxd + Trakt"
       homer.url: "https://{{ scrob.subdomain }}.{{ domain }}"
       homer.logo: "assets/homer-icons/svg/scrob.svg"
