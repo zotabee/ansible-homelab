@@ -18,7 +18,7 @@
     paperless_media: "{{ paperless.media_folder | default('', true) or paperless.folder ~ '/media' }}"
     paperless_consume: "{{ paperless.consume_folder | default('', true) or paperless.folder ~ '/consume' }}"
     paperless_postgres: "{{ paperless.dbengine | default('sqlite', true) == 'postgresql' }}"
-    paperless_tika: "{{ paperless.tika | default(false) | bool }}"
+    paperless_tika: "{{ paperless.tika | default(true) | bool }}"
 
 # No recurse: the folder holds .secrets. At every start the paperless container
 # itself chowns data, media, consume and export to USERMAP_UID:USERMAP_GID.
@@ -164,10 +164,9 @@
         aliases:
           - paperless-tika
 
-# No authelia@docker, as for SEEDbox's apps with their own accounts: the mobile
-# apps call /api with a password or a token and cannot follow a forward-auth
-# redirect, and share links (/share/) open without an account. Paperless has
-# its own login, rate limits and TOTP two-factor.
+# Behind authelia@docker like the other homelab apps (no mobile app is used),
+# on top of Paperless's own login. Share links (/share/) then need an Authelia
+# login too; a router without middleware for /share/ would open them again.
 #
 # Behind Cloudflare and Traefik: PAPERLESS_URL fills the CSRF trusted origins
 # and CORS; ALLOWED_HOSTS is set apart because PAPERLESS_URL alone keeps "*".
@@ -212,7 +211,7 @@
       PAPERLESS_TIKA_ENDPOINT: "http://paperless-tika:9998"
       PAPERLESS_TIKA_GOTENBERG_ENDPOINT: "http://paperless-gotenberg:3000"
       PAPERLESS_TIME_ZONE: "{{ tz }}"
-      PAPERLESS_OCR_LANGUAGE: "{{ paperless.ocr_language | default('fra+eng', true) }}"
+      PAPERLESS_OCR_LANGUAGE: "{{ paperless.ocr_language | default('deu+fra+eng', true) }}"
       PAPERLESS_OCR_LANGUAGES: "{{ paperless.ocr_languages | default('', true) }}"
     networks:
       - name: web
@@ -225,6 +224,7 @@
       traefik.docker.network: "web"
       traefik.http.routers.paperless.rule: "Host(`{{ paperless.subdomain }}.{{ domain }}`)"
       traefik.http.routers.paperless.entrypoints: "websecure"
+      traefik.http.routers.paperless.middlewares: "authelia@docker"
       traefik.http.services.paperless.loadbalancer.server.port: "8000"
       # Homer
       homer.enable: "true"
