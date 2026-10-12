@@ -42,6 +42,19 @@ homebox:
   api_key_pepper: "" # 32+ characters; empty: generated once into <folder>/.secrets. Changing it invalidates every HomeBox API key
   folder: /opt/homebox
   subdomain: homebox
+paperless:
+  tag: latest # Or an exact release, quoted, without its "v" (e.g. "3.3.0"); run an export before an upgrade
+  folder: /opt/paperless
+  subdomain: paperless
+  media_folder: "" # The documents (originals, archived PDFs, thumbnails); empty is <folder>/media
+  consume_folder: "{{ data_folder }}/paperless/consume" # The inbox Paperless watches, on the data folder so Syncthing or File Browser can drop scans in; Paperless re-owns it at each start
+  dbengine: sqlite # sqlite or postgresql, chosen before the first run: switching later needs an export and an import
+  tika: false # true adds Tika and Gotenberg, for Office documents and .eml files
+  ocr_language: fra+eng # Tesseract codes joined by +; the first one also sets the search and classifier language
+  ocr_languages: "" # Extra Tesseract packages, space separated, installed at each start (eng deu fra ita spa ship with the image)
+  secret_key: "" # Empty generates one, kept in <folder>/.secrets/secret_key
+  user: "" # The admin, made on the first run; empty gives "<first label of domain>.paperless"
+  password: "" # Empty generates one, kept in <folder>/.secrets/admin_password
 whalevane:
   tag: latest
   folder: /opt/whalevane

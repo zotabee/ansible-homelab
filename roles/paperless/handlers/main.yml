@@ -1,0 +1,8 @@
+---
+# The password is not printed: it is in .secrets (root only), or in settings.yml
+# when paperless.password is set there.
+- name: Show Paperless Admin Login
+  ansible.builtin.debug:
+    msg: >-
+      Paperless-ngx admin created: https://{{ paperless.subdomain }}.{{ domain }}, user {{ paperless_admin_user }},
+      password in {{ paperless.folder }}/.secrets/admin_password (or paperless.password in settings.yml)

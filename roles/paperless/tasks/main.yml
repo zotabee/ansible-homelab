@@ -1,0 +1,275 @@
+---
+# Paperless-ngx (https://github.com/paperless-ngx/paperless-ngx), its broker and
+# optional sidecars. Every name here is paperless*: none is used by SEEDbox.
+#
+# An upgrade runs database migrations, and an export only imports into the
+# version that wrote it. The tag follows latest and SEEDbox's Watchtower updates
+# it every night, so migrations run unattended: keep backups and exports
+# (docker exec paperless document_exporter ../export).
+- name: Check Paperless Settings
+  ansible.builtin.assert:
+    that:
+      - paperless.dbengine | default('sqlite', true) in ["sqlite", "postgresql"]
+    fail_msg: "Set paperless.dbengine to sqlite or postgresql."
+    quiet: true
+
+- name: Set Paperless Facts
+  ansible.builtin.set_fact:
+    paperless_media: "{{ paperless.media_folder | default('', true) or paperless.folder ~ '/media' }}"
+    paperless_consume: "{{ paperless.consume_folder | default('', true) or paperless.folder ~ '/consume' }}"
+    paperless_postgres: "{{ paperless.dbengine | default('sqlite', true) == 'postgresql' }}"
+    paperless_tika: "{{ paperless.tika | default(false) | bool }}"
+
+# No recurse: the folder holds .secrets. At every start the paperless container
+# itself chowns data, media, consume and export to USERMAP_UID:USERMAP_GID.
+- name: Create Paperless Directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ user }}"
+    group: "{{ group }}"
+    mode: "0750"
+  loop:
+    - "{{ paperless.folder }}"
+    - "{{ paperless.folder }}/data"
+    - "{{ paperless.folder }}/export"
+    - "{{ paperless.folder }}/redis"
+    - "{{ paperless_media }}"
+    - "{{ paperless_consume }}"
+
+- name: Create Paperless Database Directory
+  ansible.builtin.file:
+    path: "{{ paperless.folder }}/db"
+    state: directory
+    owner: "{{ user }}"
+    group: "{{ group }}"
+    mode: "0750"
+  when: paperless_postgres | bool
+
+# The generated secrets stay outside every mount, readable by root only. The
+# password lookup writes each file 0600 in a 0700 folder; the folder is made
+# here first so its mode holds even if something else created it.
+- name: Create Paperless Secrets Directory
+  ansible.builtin.file:
+    path: "{{ paperless.folder }}/.secrets"
+    state: directory
+    mode: "0700"
+
+# An empty or null setting generates the value once and keeps it; it never
+# reaches the container as "None".
+- name: Generate Persistent Paperless Secrets If Not Provided
+  ansible.builtin.set_fact:
+    paperless_secret_key: >-
+      {{ paperless.secret_key | default('', true) or
+         lookup('ansible.builtin.password', paperless.folder + '/.secrets/secret_key',
+                length=64, chars=['ascii_letters', 'digits']) }}
+    paperless_admin_user: "{{ paperless.user | default('', true) or (domain.split('.') | first) ~ '.paperless' }}"
+    paperless_admin_password: >-
+      {{ paperless.password | default('', true) or
+         lookup('ansible.builtin.password', paperless.folder + '/.secrets/admin_password',
+                length=24, chars=['ascii_letters', 'digits']) }}
+  no_log: true
+
+# PostgreSQL takes it only when it creates the cluster: a later change here is
+# not applied to the database.
+- name: Generate Persistent Paperless Database Password
+  ansible.builtin.set_fact:
+    paperless_db_password: >-
+      {{ lookup('ansible.builtin.password', paperless.folder + '/.secrets/db_password',
+                length=32, chars=['ascii_letters', 'digits']) }}
+  no_log: true
+  when: paperless_postgres | bool
+
+# The broker, the database and the sidecars are on this network only; never on web.
+- name: Create Paperless Network
+  community.docker.docker_network:
+    name: paperless
+
+# Valkey, as in upstream's compose files; any Redis-compatible broker works.
+- name: Create Paperless Redis Docker Container
+  community.docker.docker_container:
+    name: paperless-redis
+    image: docker.io/valkey/valkey:9-alpine
+    pull: true
+    restart_policy: unless-stopped
+    state: started
+    user: "{{ uid | string }}:{{ gid | string }}"
+    volumes:
+      - "{{ paperless.folder }}/redis:/data:rw"
+    networks:
+      - name: paperless
+        aliases:
+          - paperless-redis
+
+# PostgreSQL 18 keeps its cluster in /var/lib/postgresql/18/docker. A major
+# upgrade (18 to 19) needs a dump and a restore, so the tag stays on 18:
+# Watchtower only brings 18.x updates. The image runs as uid:gid through nss_wrapper.
+#
+# state: healthy waits for it before Paperless starts. The check goes over TCP:
+# while it creates the cluster, PostgreSQL serves its socket only, which would
+# pass a socket check too early.
+- name: Create Paperless Database Docker Container
+  community.docker.docker_container:
+    name: paperless-db
+    image: docker.io/library/postgres:18
+    pull: true
+    restart_policy: unless-stopped
+    state: healthy
+    user: "{{ uid | string }}:{{ gid | string }}"
+    volumes:
+      - "{{ paperless.folder }}/db:/var/lib/postgresql:rw"
+    env:
+      POSTGRES_DB: paperless
+      POSTGRES_USER: paperless
+      POSTGRES_PASSWORD: "{{ paperless_db_password }}"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "paperless", "-d", "paperless"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - name: paperless
+        aliases:
+          - paperless-db
+  when: paperless_postgres | bool
+
+# Optional: Office documents (.docx, .xlsx, .odt...) and e-mails (.eml).
+# Images and Gotenberg flags as in upstream's docker-compose.postgres-tika.yml.
+- name: Create Paperless Gotenberg Docker Container
+  community.docker.docker_container:
+    name: paperless-gotenberg
+    image: docker.io/gotenberg/gotenberg:8.37
+    pull: true
+    command:
+      - gotenberg
+      - --chromium-disable-javascript=true
+      - --chromium-allow-list=file:///tmp/.*
+    restart_policy: unless-stopped
+    state: "{{ 'started' if paperless_tika | bool else 'absent' }}"
+    networks:
+      - name: paperless
+        aliases:
+          - paperless-gotenberg
+
+- name: Create Paperless Tika Docker Container
+  community.docker.docker_container:
+    name: paperless-tika
+    image: docker.io/apache/tika:3.3.1.0
+    pull: true
+    restart_policy: unless-stopped
+    state: "{{ 'started' if paperless_tika | bool else 'absent' }}"
+    networks:
+      - name: paperless
+        aliases:
+          - paperless-tika
+
+# No authelia@docker, as for SEEDbox's apps with their own accounts: the mobile
+# apps call /api with a password or a token and cannot follow a forward-auth
+# redirect, and share links (/share/) open without an account. Paperless has
+# its own login, rate limits and TOTP two-factor.
+#
+# Behind Cloudflare and Traefik: PAPERLESS_URL fills the CSRF trusted origins
+# and CORS; ALLOWED_HOSTS is set apart because PAPERLESS_URL alone keeps "*".
+# Web logins are rate limited per CF-Connecting-IP: websecure only accepts
+# Cloudflare (authenticated origin pulls). A web login without that header is
+# refused (403), so the UI only works through Cloudflare; /api is not affected.
+#
+# Env keys and labels are compared allow_more_present: a key removed here stays
+# on the container until it is recreated, so the Tika keys are always set.
+#
+# Docker keeps container logs unrotated by default; Paperless also writes its
+# own, rotated, in data/log.
+- name: Create Paperless Docker Container
+  community.docker.docker_container:
+    name: paperless
+    image: "ghcr.io/paperless-ngx/paperless-ngx:{{ paperless.tag | string }}"
+    pull: true
+    restart_policy: unless-stopped
+    state: started
+    log_driver: json-file
+    log_options:
+      max-size: 10m
+      max-file: "3"
+    volumes:
+      - "{{ paperless.folder }}/data:/usr/src/paperless/data:rw"
+      - "{{ paperless_media }}:/usr/src/paperless/media:rw"
+      - "{{ paperless.folder }}/export:/usr/src/paperless/export:rw"
+      - "{{ paperless_consume }}:/usr/src/paperless/consume:rw"
+    env:
+      USERMAP_UID: "{{ uid | string }}"
+      USERMAP_GID: "{{ gid | string }}"
+      PAPERLESS_SECRET_KEY: "{{ paperless_secret_key }}"
+      PAPERLESS_URL: "https://{{ paperless.subdomain }}.{{ domain }}"
+      PAPERLESS_ALLOWED_HOSTS: "{{ paperless.subdomain }}.{{ domain }}"
+      PAPERLESS_PROXY_SSL_HEADER: '["HTTP_X_FORWARDED_PROTO", "https"]'
+      PAPERLESS_ALLAUTH_TRUSTED_CLIENT_IP_HEADER: "CF-Connecting-IP"
+      PAPERLESS_REDIS: "redis://paperless-redis:6379"
+      PAPERLESS_DBENGINE: "{{ 'postgresql' if paperless_postgres | bool else 'sqlite' }}"
+      PAPERLESS_DBHOST: "{{ 'paperless-db' if paperless_postgres | bool else omit }}"
+      PAPERLESS_DBPASS: "{{ paperless_db_password if paperless_postgres | bool else omit }}"
+      PAPERLESS_TIKA_ENABLED: "{{ paperless_tika | bool | string | lower }}"
+      PAPERLESS_TIKA_ENDPOINT: "http://paperless-tika:9998"
+      PAPERLESS_TIKA_GOTENBERG_ENDPOINT: "http://paperless-gotenberg:3000"
+      PAPERLESS_TIME_ZONE: "{{ tz }}"
+      PAPERLESS_OCR_LANGUAGE: "{{ paperless.ocr_language | default('fra+eng', true) }}"
+      PAPERLESS_OCR_LANGUAGES: "{{ paperless.ocr_languages | default('', true) }}"
+    networks:
+      - name: web
+        aliases:
+          - paperless
+      - name: paperless
+    labels:
+      # Traefik
+      traefik.enable: "true"
+      traefik.docker.network: "web"
+      traefik.http.routers.paperless.rule: "Host(`{{ paperless.subdomain }}.{{ domain }}`)"
+      traefik.http.routers.paperless.entrypoints: "websecure"
+      traefik.http.services.paperless.loadbalancer.server.port: "8000"
+      # Homer
+      homer.enable: "true"
+      homer.name: "Paperless-ngx"
+      homer.service: "Tools"
+      homer.priority: "40"
+      homer.subtitle: "Scan, index and archive all your documents"
+      homer.url: "https://{{ paperless.subdomain }}.{{ domain }}"
+      homer.logo: "assets/homer-icons/svg/paperless-ngx.svg"
+      homer.target: "_blank"
+
+# The admin is made here, not with PAPERLESS_ADMIN_USER/PASSWORD on the
+# container, where the password would stay in its environment (docker inspect,
+# Portainer). manage_superuser is what the image runs for those: it does
+# nothing once that user or any superuser exists, and never changes a password.
+# It is called through python3, not through the image's wrapper of the same
+# name, which starts with s6's with-contenv and so drops the variables docker
+# exec passes. Skipped in check mode, where the container may not exist yet.
+- name: Create Paperless Admin Account
+  when: not ansible_check_mode
+  block:
+    # A first start migrates the database and builds the search index before
+    # the web server answers the image's healthcheck.
+    - name: Wait for the Paperless Container to Be Healthy
+      community.docker.docker_container_info:
+        name: paperless
+      register: paperless_info
+      until: paperless_info.container.State.Health.Status | default('') == "healthy"
+      retries: 60
+      delay: 10
+
+    - name: Create the Paperless Admin Account
+      community.docker.docker_container_exec:
+        container: paperless
+        user: paperless
+        chdir: /usr/src/paperless/src
+        argv:
+          - python3
+          - manage.py
+          - manage_superuser
+        env:
+          PAPERLESS_ADMIN_USER: "{{ paperless_admin_user }}"
+          PAPERLESS_ADMIN_PASSWORD: "{{ paperless_admin_password }}"
+          PAPERLESS_ADMIN_MAIL: "admin@{{ domain }}"
+      register: paperless_superuser
+      changed_when: "'Created superuser' in paperless_superuser.stdout"
+      no_log: true
+      notify: Show Paperless Admin Login
