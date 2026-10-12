@@ -1,0 +1,231 @@
+---
+# Floppy is a Yamtrack fork. It replaces this repo's yamtrack role: SEEDbox owns
+# the yamtrack container, its network and /opt/yamtrack, so nothing here may
+# use those names.
+#
+# No task recurses into the folder: a recursive mode would reset the secrets
+# below to 0775 on every run after the first.
+- name: Create Floppy Directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ user }}"
+    group: "{{ group }}"
+    mode: "0775"
+  with_items:
+    - "{{ floppy.folder }}"
+    - "{{ floppy.folder }}/data"
+    - "{{ floppy.folder }}/backups"
+    - "{{ floppy.folder }}/redis"
+
+# The generated keys stay outside every mount, readable by root only. Back this
+# folder up with data/: the key below also encrypts the stored integration
+# credentials.
+- name: Create Floppy Secrets Directory
+  ansible.builtin.file:
+    path: "{{ floppy.folder }}/.secrets"
+    state: directory
+    mode: "0700"
+
+# The key signs the sessions and CSRF tokens, encrypts the integration
+# credentials Floppy stores, and gives Floppy its Plex client identifier, so it
+# is generated once and kept. An empty setting must never reach the container
+# as the text "None".
+- name: Generate Persistent Floppy Secret Key
+  ansible.builtin.set_fact:
+    floppy_secret: >-
+      {{ floppy.secret if floppy.secret else
+         lookup('ansible.builtin.password', floppy.folder + '/.secrets/secret',
+                length=50, chars=['ascii_letters', 'digits']) }}
+  no_log: true
+
+- name: Check Floppy Secret Key
+  ansible.builtin.assert:
+    that:
+      - floppy_secret | length >= 32
+      - floppy_secret != "None"
+    fail_msg: "Leave floppy.secret empty to generate one, or set a random string of at least 32 characters."
+    quiet: true
+
+- name: Generate Persistent Floppy Admin Credentials
+  ansible.builtin.set_fact:
+    floppy_admin_user: "{{ floppy.user | default('', true) or (domain.split('.') | first) ~ '.floppy' }}"
+    floppy_admin_password: >-
+      {{ floppy.password | default('', true) or
+         lookup('ansible.builtin.password', floppy.folder + '/.secrets/admin_password',
+                length=24, chars=['ascii_letters', 'digits']) }}
+  no_log: true
+
+- name: Find Floppy Secret Files
+  ansible.builtin.find:
+    paths: "{{ floppy.folder }}/.secrets"
+  register: floppy_secret_files
+
+- name: Restrict Floppy Secret Files
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    mode: "0600"
+  loop: "{{ floppy_secret_files.files }}"
+  loop_control:
+    label: "{{ item.path | basename }}"
+
+# Redis is reached on this network only; it is never on web.
+- name: Create Floppy Network
+  community.docker.docker_network:
+    name: floppy
+
+# Upstream's own Redis settings: an append-only file instead of snapshots, and
+# a ceiling that evicts only keys with a TTL (the cache), never the Celery
+# queues. With a maxmemory set here, Floppy leaves the Redis config alone.
+- name: Create Floppy Redis Docker Container
+  community.docker.docker_container:
+    name: floppy-redis
+    image: redis:8-alpine
+    pull: true
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --save
+      - ""
+      - --maxmemory
+      - 256mb
+      - --maxmemory-policy
+      - volatile-lru
+    user: "{{ uid | string }}:{{ gid | string }}"
+    volumes:
+      - "{{ floppy.folder }}/redis:/data"
+    env:
+      TZ: "{{ tz }}"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    restart_policy: unless-stopped
+    networks:
+      - name: floppy
+        aliases:
+          - floppy-redis
+
+# The image carries its own healthcheck (GET /health/ every 45s).
+#
+# Traefik ends TLS and always sends X-Forwarded-Proto, which the image's nginx
+# passes on: USE_X_FORWARDED_PROTO lets Django see https, so the URLs it builds
+# itself (OAuth metadata and device sign-in, list feeds, cached images, Trakt
+# list callbacks) are https ones. Upstream asks for it behind any HTTPS proxy.
+#
+# nginx logs every request and the Celery workers log at INFO to stdout, and
+# Docker keeps that log unrotated by default. Floppy's own log is in data/logs.
+- name: Create Floppy Docker Container
+  community.docker.docker_container:
+    name: floppy
+    image: "ghcr.io/dannyvfilms/floppy:{{ floppy.tag | string }}"
+    pull: true
+    restart_policy: unless-stopped
+    log_driver: json-file
+    log_options:
+      max-size: 10m
+      max-file: "3"
+    volumes:
+      - "{{ floppy.folder }}/data:/floppy/db"
+      - "{{ floppy.folder }}/backups:/floppy/backups"
+    env:
+      TZ: "{{ tz }}"
+      PUID: "{{ uid | string }}"
+      PGID: "{{ gid | string }}"
+      SECRET: "{{ floppy_secret }}"
+      REDIS_URL: "redis://floppy-redis:6379"
+      URLS: "https://{{ floppy.subdomain }}.{{ domain }}"
+      USE_X_FORWARDED_PROTO: "True"
+      REGISTRATION: "{{ floppy.registration | string }}"
+      DEMO_ACCOUNT_ENABLED: "False"
+      TMDB_API: "{{ floppy.tmdb_api if floppy.tmdb_api else omit }}"
+      TVDB_API_KEY: "{{ floppy.tvdb_api_key if floppy.tvdb_api_key else omit }}"
+      MAL_API: "{{ floppy.mal_api if floppy.mal_api else omit }}"
+      IGDB_ID: "{{ floppy.igdb_id if floppy.igdb_id else omit }}"
+      IGDB_SECRET: "{{ floppy.igdb_secret if floppy.igdb_secret else omit }}"
+      TRAKT_API: "{{ floppy.trakt_api if floppy.trakt_api else omit }}"
+      TRAKT_API_SECRET: "{{ floppy.trakt_api_secret if floppy.trakt_api_secret else omit }}"
+      SIMKL_ID: "{{ floppy.simkl_id if floppy.simkl_id else omit }}"
+      SIMKL_SECRET: "{{ floppy.simkl_secret if floppy.simkl_secret else omit }}"
+      HARDCOVER_API: "{{ floppy.hardcover_api if floppy.hardcover_api else omit }}"
+      COMICVINE_API: "{{ floppy.comicvine_api if floppy.comicvine_api else omit }}"
+      LASTFM_API_KEY: "{{ floppy.lastfm_api_key if floppy.lastfm_api_key else omit }}"
+    networks:
+      - name: web
+        aliases:
+          - floppy
+      - name: floppy
+    labels:
+      # Traefik
+      traefik.enable: "true"
+      traefik.docker.network: "web"
+      traefik.http.routers.floppy.rule: "Host(`{{ floppy.subdomain }}.{{ domain }}`)"
+      traefik.http.routers.floppy.entrypoints: "websecure"
+      traefik.http.routers.floppy.middlewares: "authelia@docker"
+      traefik.http.services.floppy.loadbalancer.server.port: "8000"
+      # Homer
+      homer.enable: "true"
+      homer.name: "Floppy"
+      homer.service: "Tools"
+      homer.priority: "2"
+      homer.subtitle: "A self hosted media tracker"
+      homer.url: "https://{{ floppy.subdomain }}.{{ domain }}"
+      homer.logo: "assets/homer-icons/png/floppy.png"
+      homer.target: "_blank"
+
+# The admin is made from the Django CLI, so the signup form can stay closed; a
+# superuser is also the only account that reaches Settings > Metadata. Skipped
+# in check mode, where the container may not exist yet.
+- name: Create Floppy Admin Account
+  when: not ansible_check_mode
+  block:
+    # A first start runs every migration before the web server is up.
+    - name: Wait for Floppy to Be Healthy
+      community.docker.docker_container_info:
+        name: floppy
+      register: floppy_info
+      until: floppy_info.container.State.Health.Status | default('') == "healthy"
+      retries: 60
+      delay: 10
+
+    - name: Check Whether a Floppy Account Exists
+      community.docker.docker_container_exec:
+        container: floppy
+        user: abc
+        argv:
+          - python
+          - manage.py
+          - shell
+          - -c
+          - "from django.contrib.auth import get_user_model; print('floppy-accounts:', get_user_model().objects.exists())"
+      register: floppy_accounts
+      changed_when: false
+
+    # The password goes in as an environment variable, not on the command line,
+    # where the container's process list would show it.
+    - name: Create Floppy Admin
+      community.docker.docker_container_exec:
+        container: floppy
+        user: abc
+        argv:
+          - python
+          - manage.py
+          - createsuperuser
+          - --noinput
+          - --username
+          - "{{ floppy_admin_user }}"
+          - --email
+          - "admin@{{ domain }}"
+        env:
+          DJANGO_SUPERUSER_PASSWORD: "{{ floppy_admin_password }}"
+      when: "'floppy-accounts: False' in floppy_accounts.stdout"
+      no_log: true
+
+    - name: Show Floppy Admin Login
+      ansible.builtin.debug:
+        msg: >-
+          Floppy admin created: https://{{ floppy.subdomain }}.{{ domain }}, user {{ floppy_admin_user }},
+          password in {{ floppy.folder }}/.secrets/admin_password (or floppy.password in settings.yml)
+      when: "'floppy-accounts: False' in floppy_accounts.stdout"

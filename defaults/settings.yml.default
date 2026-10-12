@@ -10,6 +10,26 @@ actualbudget:
   tag: latest
   folder: /opt/actualbudget
   subdomain: actualbudget
+floppy:
+  tag: "26.10.8" # An image tag: a release without its "v". "release" follows each new release; never "latest" (every commit)
+  folder: /opt/floppy
+  subdomain: floppy
+  secret: "" # Django key for sessions, CSRF tokens and the stored credentials; empty generates one, kept in <folder>/.secrets/secret
+  user: "" # Admin made on the first run; empty gives "<first label of domain>.floppy"
+  password: "" # Empty generates one, kept in <folder>/.secrets/admin_password
+  registration: false # The signup form; the admin above is made without it
+  tmdb_api: "" # A default is provided
+  tvdb_api_key: ""
+  mal_api: "" # A default is provided
+  igdb_id: "" # Games need both igdb_id and igdb_secret (a Twitch app): the default id alone is not enough
+  igdb_secret: ""
+  trakt_api: ""
+  trakt_api_secret: ""
+  simkl_id: "" # No default: Simkl import needs both the id and the secret
+  simkl_secret: ""
+  hardcover_api: "" # No default: Hardcover book metadata needs your own token
+  comicvine_api: "" # A default is provided
+  lastfm_api_key: ""
 homebox:
   tag: latest
   folder: /opt/homebox
@@ -30,15 +50,3 @@ whalevane:
     - binance.smartmoney
     - hyperliquid.perps
     - bybit.copytrading
-yamtrack:
-  tag: latest
-  folder: /opt/yamtrack
-  subdomain: yamtrack
-  secret: MyYamtrackSecret
-  tmdb_api: "" # A default is provided
-  trakt_api: ""
-  mal_api: "" # A default is provided
-  igdb_id: "" # A default is provided
-  igdb_secret: "" # A default is provided
-  simkl_id: "" # Only needed for importing media from Simkl, a default is provided
-  simkl_secret: "" # Only needed for importing media from Simkl, a default is provided
