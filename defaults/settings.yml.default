@@ -11,7 +11,7 @@ actualbudget:
   folder: /opt/actualbudget
   subdomain: actualbudget
 floppy:
-  tag: "26.10.8" # An image tag: a release without its "v". "release" follows each new release; never "latest" (every commit)
+  tag: latest # "latest" is built from every commit on Floppy's dev branch; "release" follows each published release
   folder: /opt/floppy
   subdomain: floppy
   secret: "" # Django key for sessions, CSRF tokens and the stored credentials; empty generates one, kept in <folder>/.secrets/secret

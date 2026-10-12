@@ -168,8 +168,8 @@
       # Homer
       homer.enable: "true"
       homer.name: "Floppy"
-      homer.service: "Tools"
-      homer.priority: "2"
+      homer.service: "Media"
+      homer.priority: "25"
       homer.subtitle: "A self hosted media tracker"
       homer.url: "https://{{ floppy.subdomain }}.{{ domain }}"
       homer.logo: "assets/homer-icons/png/floppy.png"
