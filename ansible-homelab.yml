@@ -6,5 +6,6 @@
     # Applications roles
     - {role: actualbudget, tags: ["extra", "actualbudget"]}
     - {role: homebox, tags: ["extra", "homebox"]}
+    - {role: paperless, tags: ["extra", "paperless"]}
     - {role: whalevane, tags: ["extra", "whalevane"]}
     - {role: yamtrack, tags: ["extra", "yamtrack"]}
