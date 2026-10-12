@@ -6,6 +6,13 @@ gid: 998
 domain: example.com
 data_folder: /mnt/storage
 tz: "Europe/Zurich"
+scrob:
+  tag: latest # Each new image migrates the database, with no way back; pin a release (e.g. "2.25.1") in settings.yml to freeze it
+  folder: /opt/scrob
+  subdomain: scrob
+  secret_key: "" # Signs the logins; empty generates one, kept in <folder>/.secrets/secret_key
+  registrations: false # The first account can always sign up; true lets others register too
+  public_hooks: false # true serves the webhooks and Kodi device linking without Authelia, for scrobblers off this host
 actualbudget:
   tag: latest
   folder: /opt/actualbudget
