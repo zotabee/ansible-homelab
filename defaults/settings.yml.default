@@ -12,6 +12,7 @@ actualbudget:
   subdomain: actualbudget
 homebox:
   tag: latest
+  api_key_pepper: "" # 32+ characters; empty: generated once into <folder>/.secrets. Changing it invalidates every HomeBox API key
   folder: /opt/homebox
   subdomain: homebox
 whalevane:

@@ -1,4 +1,6 @@
 ---
+# No recurse: the folder holds .secrets, which stays 0700 with 0600 files.
+# HomeBox (regular image) runs as root and owns what it writes in /data.
 - name: Create HomeBox Directories
   ansible.builtin.file:
     path: "{{ item }}"
@@ -6,9 +8,39 @@
     owner: "{{ user }}"
     group: "{{ group }}"
     mode: "0775"
-    recurse: true
   with_items:
     - "{{ homebox.folder }}"
+
+# HomeBox 0.26.0 refuses to start without HBOX_AUTH_API_KEY_PEPPER of at least
+# 32 bytes. It is HMAC-keyed into the stored API key hashes, so it must never
+# change: a new pepper makes every API key already issued stop working (logins
+# and sessions are not affected). Generated once into <folder>/.secrets, unless
+# homebox.api_key_pepper is set.
+- name: Generate Persistent HomeBox API Key Pepper
+  ansible.builtin.set_fact:
+    homebox_api_key_pepper: >-
+      {{ homebox.api_key_pepper | default('') or
+         lookup('ansible.builtin.password', homebox.folder + '/.secrets/api_key_pepper',
+                length=64, chars=['ascii_letters', 'digits']) }}
+  no_log: true
+
+- name: Check HomeBox API Key Pepper
+  ansible.builtin.assert:
+    that: homebox_api_key_pepper | string | length >= 32
+    fail_msg: "homebox.api_key_pepper must be at least 32 characters, or HomeBox will not start."
+    quiet: true
+
+- name: Restrict HomeBox Secrets
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: "{{ item.state }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - {path: "{{ homebox.folder }}/.secrets", state: directory, mode: "0700"}
+    - {path: "{{ homebox.folder }}/.secrets/api_key_pepper", state: file, mode: "0600"}
+  loop_control:
+    label: "{{ item.path | basename }}"
+  when: not (homebox.api_key_pepper | default(''))
 
 - name: HomeBox Docker Container
   community.docker.docker_container:
@@ -24,7 +56,9 @@
     env:
       HBOX_LOG_LEVEL: "info"
       HBOX_LOG_FORMAT: "text"
-      HBOX_WEB_MAX_FILE_UPLOAD: "10"
+      HBOX_WEB_MAX_UPLOAD_SIZE: "10"
+      HBOX_OPTIONS_TRUST_PROXY: "true"
+      HBOX_AUTH_API_KEY_PEPPER: "{{ homebox_api_key_pepper }}"
     restart_policy: unless-stopped
     labels:
       # Traefik
