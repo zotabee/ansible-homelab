@@ -14,6 +14,13 @@ homebox:
   tag: latest
   folder: /opt/homebox
   subdomain: homebox
+scrob:
+  tag: latest # Pin a release in settings.yml, e.g. "2.25.1": each new image migrates the database, with no way back
+  folder: /opt/scrob
+  subdomain: scrob
+  secret_key: "" # Signs the logins; empty generates one, kept in <folder>/.secrets/secret_key
+  registrations: false # The first account can always sign up; true lets others register too
+  public_hooks: false # true serves the webhooks and Kodi device linking without Authelia, for scrobblers off this host
 whalevane:
   tag: latest
   folder: /opt/whalevane

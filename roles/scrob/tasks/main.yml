@@ -1,0 +1,144 @@
+---
+# Scrob, a movie and TV tracker (https://github.com/ellite/scrob), and its own
+# PostgreSQL. Every name here is scrob*: SEEDbox owns yamtrack, its network and
+# its folder.
+#
+# Not recursive: PostgreSQL keeps its files in postgres/pgdata (0700, its own),
+# and the Scrob image chowns data/ to PUID:PGID at each start.
+- name: Create Scrob Directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ user }}"
+    group: "{{ group }}"
+    mode: "0750"
+  with_items:
+    - "{{ scrob.folder }}"
+    - "{{ scrob.folder }}/data"
+    - "{{ scrob.folder }}/postgres"
+
+# Kept in <folder>/.secrets from the first run, as SEEDbox does. The database
+# password only counts when PostgreSQL initialises its data. A new secret key
+# signs every browser out; a linked Kodi renews its token with the refresh
+# token kept in the database.
+- name: Generate Scrob Secrets
+  ansible.builtin.set_fact:
+    scrob_secret_key: >-
+      {{ scrob.secret_key | default('') or
+         lookup('ansible.builtin.password', scrob.folder + '/.secrets/secret_key',
+                length=64, chars=['ascii_letters', 'digits']) }}
+    scrob_db_password: >-
+      {{ lookup('ansible.builtin.password', scrob.folder + '/.secrets/db_password',
+                length=32, chars=['ascii_letters', 'digits']) }}
+  no_log: true
+
+- name: Create Scrob Network
+  community.docker.docker_network:
+    name: scrob
+
+# Only on the scrob network: nothing on web reaches the database. PGDATA is a
+# subfolder, so the mounted folder stays the role's and the data PostgreSQL's.
+# Major 16 as in upstream's compose: a new major needs a dump and a restore.
+#
+# state: healthy waits for it before Scrob starts, since Scrob migrates the
+# database first and exits when it cannot (skipped in check mode). The check
+# goes over TCP: while it initialises its data, PostgreSQL runs a server on
+# its socket only, which would pass a socket check too early.
+- name: Create Scrob Database Docker Container
+  community.docker.docker_container:
+    name: scrob-db
+    image: postgres:16-alpine
+    pull: true
+    restart_policy: unless-stopped
+    state: healthy
+    user: "{{ uid | string }}:{{ gid | string }}"
+    volumes:
+      - "{{ scrob.folder }}/postgres:/var/lib/postgresql/data:rw"
+    env:
+      POSTGRES_USER: scrob
+      POSTGRES_PASSWORD: "{{ scrob_db_password }}"
+      POSTGRES_DB: scrob
+      PGDATA: /var/lib/postgresql/data/pgdata
+      TZ: "{{ tz }}"
+    networks:
+      - name: scrob
+        aliases:
+          - scrob-db
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U scrob -d scrob"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+# The UI is behind Authelia, and Scrob has its own accounts on top of it.
+# Containers on web (Jellyfin, Radarr, Sonarr) reach Scrob at
+# http://scrob:7330 without Traefik, so their webhooks and import lists need
+# no public route. scrob.public_hooks adds one for scrobblers off this host
+# (the Kodi add-on, a remote Plex or Emby): the webhooks, which check the
+# user's API key or device token, and the two device-link endpoints (RFC 8628)
+# a client calls to get its token and, each day, to renew it. The rest of
+# /api/proxy stays behind Authelia.
+#
+# Traefik routes only to a healthy container: the start interval runs the
+# first check seconds after a start, not a whole interval later.
+#
+# Not updated by Watchtower: each new image migrates the database, with no
+# way back. The role pulls scrob.tag when it runs.
+- name: Create Scrob Docker Container
+  community.docker.docker_container:
+    name: scrob
+    image: "bellamy/scrob:{{ scrob.tag }}"
+    pull: true
+    restart_policy: unless-stopped
+    state: started
+    volumes:
+      - "{{ scrob.folder }}/data:/app/backend/data:rw"
+    env:
+      TZ: "{{ tz }}"
+      PUID: "{{ uid | string }}"
+      PGID: "{{ gid | string }}"
+      SECRET_KEY: "{{ scrob_secret_key }}"
+      DATABASE_URL: "postgresql+asyncpg://scrob:{{ scrob_db_password }}@scrob-db:5432/scrob"
+      SERVER_URL: "https://{{ scrob.subdomain }}.{{ domain }}"
+      ENABLE_REGISTRATIONS: "{{ scrob.registrations | default(false) | bool | string | lower }}"
+    networks:
+      - name: web
+        aliases:
+          - scrob
+      - name: scrob
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:7331/health"]
+      interval: 1m
+      timeout: 10s
+      retries: 3
+      start_period: 1m
+      start_interval: 5s
+    labels: "{{ scrob_labels | combine(scrob_hook_labels if scrob.public_hooks | default(false) | bool else {}) }}"
+  vars:
+    scrob_labels:
+      com.centurylinklabs.watchtower.enable: "false"
+      # Traefik
+      traefik.enable: "true"
+      traefik.docker.network: "web"
+      traefik.http.routers.scrob.rule: "Host(`{{ scrob.subdomain }}.{{ domain }}`)"
+      traefik.http.routers.scrob.entrypoints: "websecure"
+      traefik.http.routers.scrob.middlewares: "authelia@docker"
+      traefik.http.routers.scrob.service: "scrob"
+      traefik.http.services.scrob.loadbalancer.server.port: "7330"
+      # Homer
+      homer.enable: "true"
+      homer.name: "Scrob"
+      homer.service: "Tools"
+      homer.priority: "2"
+      homer.subtitle: "Your personal Letterboxd + Trakt"
+      homer.url: "https://{{ scrob.subdomain }}.{{ domain }}"
+      homer.logo: "assets/homer-icons/svg/scrob.svg"
+      homer.target: "_blank"
+    scrob_hook_labels:
+      traefik.http.routers.scrob-hooks.rule: >-
+        Host(`{{ scrob.subdomain }}.{{ domain }}`) && (PathPrefix(`/api/proxy/webhooks/`)
+        || Path(`/api/proxy/auth/device/code`) || Path(`/api/proxy/auth/device/token`))
+      traefik.http.routers.scrob-hooks.entrypoints: "websecure"
+      traefik.http.routers.scrob-hooks.priority: "100"
+      traefik.http.routers.scrob-hooks.service: "scrob"
