@@ -5,6 +5,6 @@
   roles:
     # Applications roles
     - {role: actualbudget, tags: ["extra", "actualbudget"]}
+    - {role: floppy, tags: ["extra", "floppy"]}
     - {role: homebox, tags: ["extra", "homebox"]}
     - {role: whalevane, tags: ["extra", "whalevane"]}
-    - {role: yamtrack, tags: ["extra", "yamtrack"]}
