@@ -263,10 +263,17 @@
 # the crawler, and three runs in 35 minutes began three crawls. Only the
 # loop's first pass asks; the daily run always crawls.
 #
-# Every pass after the first is the scheduled run, `--scheduled` (whalevane
-# 1.16.4, which the option needs): only it judges our returns against the
-# exchanges' own. An image before 1.16.4 refuses the option: rolling the tag
-# back below 1.16.4 needs this line back to `recent="";`.
+# Every pass after the first is a scheduled run, `--scheduled` (whalevane
+# 1.16.4): only it judges our returns against the exchanges' own.
+#
+# Two scheduled runs (whalevane 1.17.0, as its docker-compose.yml): the
+# Binance lead traders (binance.copytrading) at whalevane.crawl_lead_at, 10:00
+# UTC, after Binance's daily update of their charts; the other sources at
+# whalevane.crawl_at, 01:30 UTC. Each pass sleeps to whichever comes first.
+# 1.17.0 refuses `--scheduled` with any other set of sources, so the one-run
+# loop of 1.16 fails every night on it; an image before 1.17.0 refuses
+# `--scheduled` with one source: rolling the tag back below 1.17.0 needs the
+# 1.16 loop back (this file's history).
 - name: Create Whalevane Crawler Docker Container
   community.docker.docker_container:
     name: whalevane-crawler
@@ -275,14 +282,21 @@
     command:
       - -c
       - >-
-        recent="--unless-recent 6";
-        while true; do python -m whalevane crawl --once $recent
+        python -m whalevane crawl --once --unless-recent 6
         {{ whalevane.crawl_sources | map('regex_replace', '^', '--source ') | join(' ') }}
         || echo "sweep failed";
-        recent="--scheduled";
-        at=$(date -u -d "{{ whalevane.crawl_at | default('01:30', true) }}" +%s)
-        && sleep $(( (at - $(date -u +%s) + 86399) % 86400 + 1 ))
-        || sleep 86400; done
+        while true; do
+        night=$(date -u -d "{{ whalevane.crawl_at | default('01:30', true) }}" +%s)
+        && lead=$(date -u -d "{{ whalevane.crawl_lead_at | default('10:00', true) }}" +%s)
+        || { sleep 86400; continue; };
+        now=$(date -u +%s);
+        wn=$(( (night - now + 86399) % 86400 + 1 ));
+        wl=$(( (lead - now + 86399) % 86400 + 1 ));
+        if [ $wn -le $wl ]; then sleep $wn;
+        run="{{ whalevane.crawl_sources | reject('equalto', 'binance.copytrading') | map('regex_replace', '^', '--source ') | join(' ') }}";
+        else sleep $wl; run="--source binance.copytrading"; fi;
+        python -m whalevane crawl --once --scheduled $run || echo "sweep failed";
+        done
     restart_policy: unless-stopped
     state: started
     memory: 1G
