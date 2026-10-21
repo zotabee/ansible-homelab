@@ -73,6 +73,9 @@
     source: pull
 
 # The same checks the manual upgrade runs, inside the image about to be used.
+# Each check starts a fresh container, never one a failed run left behind (its
+# output would hold both runs), and waits up to five minutes: on 21 Oct 2026 a
+# host stall after the pull made `--version` take 2 min 54 s.
 - name: Whalevane Preflight
   when: not ansible_check_mode
   block:
@@ -84,6 +87,8 @@
         network_mode: none
         detach: false
         cleanup: true
+        recreate: true
+        timeout: 300
       register: whalevane_version
 
     - name: Require Expected Whalevane Version
@@ -100,6 +105,8 @@
         network_mode: none
         detach: false
         cleanup: true
+        recreate: true
+        timeout: 300
 
     - name: Check Existing Whalevane Database
       ansible.builtin.stat:
