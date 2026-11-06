@@ -24,6 +24,9 @@
       - name: web
         aliases:
           - actualbudget
+    # Loopback only, for an SSH tunnel. Traefik keeps reaching it over the web network.
+    published_ports:
+      - "127.0.0.1:5006:5006"
     healthcheck:
       test: ['CMD-SHELL', 'node src/scripts/health-check.js']
       interval: 60s
