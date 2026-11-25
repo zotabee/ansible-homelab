@@ -64,7 +64,8 @@
          | combine({'OVH_PLANS': stockwatch.ovh_plans | default('', true),
                     'OVH_DCS': stockwatch.ovh_dcs | default('', true),
                     'HBD_PAGES': stockwatch.hbd_pages | default('', true),
-                    'OVH_NOTIFY_MATCH': stockwatch.ovh_notify_match | default('', true)}
+                    'OVH_NOTIFY_MATCH': stockwatch.ovh_notify_match | default('', true),
+                    'HBD_NOTIFY_MATCH': stockwatch.hbd_notify_match | default('', true)}
                    | dict2items | rejectattr('value', 'equalto', '') | items2dict)
          | combine({'SHOUTRRR_URL_FILE': '/run/secrets/shoutrrr_url'} if stockwatch.shoutrrr_url | length > 0 else {}) }}
 

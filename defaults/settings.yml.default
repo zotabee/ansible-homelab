@@ -83,3 +83,4 @@ stockwatch:
   ovh_dcs: "" # Comma-separated OVH datacenters (fra,rbx,gra...); empty keeps the image's list
   hbd_pages: "" # Comma-separated Hosting By Design store URLs; empty keeps the image's three pages
   ovh_notify_match: "" # Regex an OVH item name must match to alert; empty keeps the image's hard-disk filter (1.2.0+), "." alerts on every configuration
+  hbd_notify_match: "" # Same for Hosting By Design product names; empty keeps the image's hard-disk filter (1.2.0+), "." alerts on every product
