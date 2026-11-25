@@ -1,0 +1,126 @@
+---
+# stockwatch logs OVH Eco and Hosting By Design dedicated-server stock changes
+# to <folder>/data/events.csv and sends a Shoutrrr notification on a restock.
+# Its report: docker exec stockwatch python /app/stockwatch.py report
+- name: Check Stockwatch Settings
+  ansible.builtin.assert:
+    that:
+      - stockwatch.tag | string != "latest"
+      - stockwatch.ghcr_token | length > 0
+      - stockwatch.notify_on | string in ["in", "all", "none"]
+      - stockwatch.interval | int >= 60
+      - uid | int == 1000
+    fail_msg: >-
+      Pin stockwatch.tag to a released version and set stockwatch.ghcr_token (read:packages)
+      in settings.yml; notify_on is in, all or none, interval at least 60 seconds, and uid
+      stays 1000: the image runs as uid 1000.
+    quiet: true
+
+# No task recurses into the folder, so the secrets folder keeps its 0700.
+- name: Create Stockwatch Directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ user }}"
+    group: "{{ group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - {path: "{{ stockwatch.folder }}", mode: "0750"}
+    - {path: "{{ stockwatch.folder }}/data", mode: "0750"}
+    - {path: "{{ stockwatch.folder }}/secrets", mode: "0700"}
+  loop_control:
+    label: "{{ item.path }}"
+
+# The Shoutrrr URL holds a token, so it goes in a file the container reads
+# through SHOUTRRR_URL_FILE rather than in its environment, where `docker
+# inspect` shows it. The folder is mounted, not the file: a rewrite replaces the
+# file's inode, which a file mount would not see. stockwatch reads the URL at
+# start, so a changed URL restarts the container below.
+- name: Write Stockwatch Notification URL
+  ansible.builtin.copy:
+    content: "{{ stockwatch.shoutrrr_url }}\n"
+    dest: "{{ stockwatch.folder }}/secrets/shoutrrr_url"
+    owner: "{{ user }}"
+    group: "{{ group }}"
+    mode: "0600"
+  when: stockwatch.shoutrrr_url | length > 0
+  register: stockwatch_url_written
+  no_log: true
+
+- name: Remove Stockwatch Notification URL
+  ansible.builtin.file:
+    path: "{{ stockwatch.folder }}/secrets/shoutrrr_url"
+    state: absent
+  when: stockwatch.shoutrrr_url | length == 0
+  register: stockwatch_url_removed
+
+# An empty list setting is left out, not passed empty: stockwatch would read an
+# empty OVH_PLANS as no plans at all instead of its default list.
+- name: Build Stockwatch Environment
+  ansible.builtin.set_fact:
+    stockwatch_env: >-
+      {{ {'TZ': tz, 'INTERVAL': stockwatch.interval | string, 'NOTIFY_ON': stockwatch.notify_on | string}
+         | combine({'OVH_PLANS': stockwatch.ovh_plans | default('', true),
+                    'OVH_DCS': stockwatch.ovh_dcs | default('', true),
+                    'HBD_PAGES': stockwatch.hbd_pages | default('', true)}
+                   | dict2items | rejectattr('value', 'equalto', '') | items2dict)
+         | combine({'SHOUTRRR_URL_FILE': '/run/secrets/shoutrrr_url'} if stockwatch.shoutrrr_url | length > 0 else {}) }}
+
+- name: Log In to GitHub Container Registry
+  community.docker.docker_login:
+    registry_url: ghcr.io
+    username: "{{ stockwatch.ghcr_user }}"
+    password: "{{ stockwatch.ghcr_token }}"
+  no_log: true
+
+- name: Pull Stockwatch Image
+  community.docker.docker_image:
+    name: ghcr.io/zotabee/stockwatch
+    tag: "{{ stockwatch.tag | string }}"
+    source: pull
+
+- name: Stockwatch Preflight
+  when: not ansible_check_mode
+  block:
+    - name: Check Stockwatch Image Version
+      community.docker.docker_container:
+        name: stockwatch-preflight
+        image: "ghcr.io/zotabee/stockwatch:{{ stockwatch.tag }}"
+        command: ["--version"]
+        network_mode: none
+        detach: false
+        cleanup: true
+        recreate: true
+        timeout: 300
+      register: stockwatch_version
+
+    - name: Require Expected Stockwatch Version
+      ansible.builtin.assert:
+        that: stockwatch_version.container.Output | trim == "stockwatch " ~ stockwatch.tag
+        fail_msg: "Image answered {{ stockwatch_version.container.Output | trim }}"
+        quiet: true
+
+# Pinned image, excluded from Watchtower, rotated logs. The log holds only the
+# start, fetch errors and a count per round with changes; events.csv in data/
+# is the record that matters.
+- name: Create Stockwatch Docker Container
+  community.docker.docker_container:
+    name: stockwatch
+    image: "ghcr.io/zotabee/stockwatch:{{ stockwatch.tag }}"
+    restart_policy: unless-stopped
+    state: started
+    restart: "{{ stockwatch_url_written is changed or stockwatch_url_removed is changed }}"
+    memory: 128M
+    log_driver: json-file
+    log_options:
+      max-size: 10m
+      max-file: "5"
+      compress: "true"
+    volumes:
+      - "{{ stockwatch.folder }}/data:/data:rw"
+      - "{{ stockwatch.folder }}/secrets:/run/secrets:ro"
+    env: "{{ stockwatch_env }}"
+    networks:
+      - name: web
+    labels:
+      com.centurylinklabs.watchtower.enable: "false"

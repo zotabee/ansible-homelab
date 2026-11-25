@@ -71,3 +71,14 @@ whalevane:
     - binance.smartmoney
     - hyperliquid.perps
     - bybit.copytrading
+stockwatch:
+  tag: latest # Pin a release (e.g. "1.0.0") in settings.yml: the role refuses latest
+  folder: /opt/stockwatch
+  ghcr_user: zotabee
+  ghcr_token: "" # Classic token with read:packages only; set it in settings.yml
+  shoutrrr_url: "" # Any Shoutrrr URL (e.g. discord://token@id); empty logs changes without notifying. Set it in settings.yml
+  notify_on: in # in: only when something comes into stock; all: every change; none: never
+  interval: 300 # Seconds between polls; 60 during a sale, when limited editions sell out in minutes
+  ovh_plans: "" # Comma-separated OVH Eco plan codes; empty keeps the image's list
+  ovh_dcs: "" # Comma-separated OVH datacenters (fra,rbx,gra...); empty keeps the image's list
+  hbd_pages: "" # Comma-separated Hosting By Design store URLs; empty keeps the image's three pages
