@@ -82,5 +82,5 @@ stockwatch:
   ovh_plans: "" # Comma-separated OVH Eco plan codes; empty keeps the image's list
   ovh_dcs: "" # Comma-separated OVH datacenters (fra,rbx,gra...); empty keeps the image's list
   hbd_pages: "" # Comma-separated Hosting By Design store URLs; empty keeps the image's three pages
-  ovh_notify_match: "" # Regex an OVH item name must match to alert; empty keeps the image's hard-disk filter (1.2.0+), "." alerts on every configuration
-  hbd_notify_match: "" # Same for Hosting By Design product names; empty keeps the image's hard-disk filter (1.2.0+), "." alerts on every product
+  alert_disks: hdd # hdd: only boxes with hard disks alert, hybrids included; all: every box (stockwatch 1.2.0+; everything is logged either way)
+  alert_min_hdd: 1 # With alert_disks hdd, the fewest hard disks a box needs to alert, e.g. 4
