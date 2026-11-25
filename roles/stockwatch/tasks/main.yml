@@ -55,14 +55,16 @@
   register: stockwatch_url_removed
 
 # An empty list setting is left out, not passed empty: stockwatch would read an
-# empty OVH_PLANS as no plans at all instead of its default list.
+# empty OVH_PLANS as no plans at all instead of its default list. A setting missing
+# from settings.yml counts as empty, since that file replaces the whole block.
 - name: Build Stockwatch Environment
   ansible.builtin.set_fact:
     stockwatch_env: >-
       {{ {'TZ': tz, 'INTERVAL': stockwatch.interval | string, 'NOTIFY_ON': stockwatch.notify_on | string}
          | combine({'OVH_PLANS': stockwatch.ovh_plans | default('', true),
                     'OVH_DCS': stockwatch.ovh_dcs | default('', true),
-                    'HBD_PAGES': stockwatch.hbd_pages | default('', true)}
+                    'HBD_PAGES': stockwatch.hbd_pages | default('', true),
+                    'OVH_NOTIFY_MATCH': stockwatch.ovh_notify_match | default('', true)}
                    | dict2items | rejectattr('value', 'equalto', '') | items2dict)
          | combine({'SHOUTRRR_URL_FILE': '/run/secrets/shoutrrr_url'} if stockwatch.shoutrrr_url | length > 0 else {}) }}
 
