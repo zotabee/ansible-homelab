@@ -9,11 +9,13 @@
       - stockwatch.ghcr_token | length > 0
       - stockwatch.notify_on | string in ["in", "all", "none"]
       - stockwatch.interval | int >= 60
+      - stockwatch.alert_disks | default('hdd', true) in ["hdd", "all"]
+      - stockwatch.alert_min_hdd | default(1, true) | int >= 1
       - uid | int == 1000
     fail_msg: >-
       Pin stockwatch.tag to a released version and set stockwatch.ghcr_token (read:packages)
-      in settings.yml; notify_on is in, all or none, interval at least 60 seconds, and uid
-      stays 1000: the image runs as uid 1000.
+      in settings.yml; notify_on is in, all or none, interval at least 60 seconds, alert_disks
+      hdd or all, alert_min_hdd at least 1, and uid stays 1000: the image runs as uid 1000.
     quiet: true
 
 # No task recurses into the folder, so the secrets folder keeps its 0700.
@@ -55,11 +57,14 @@
   register: stockwatch_url_removed
 
 # An empty list setting is left out, not passed empty: stockwatch would read an
-# empty OVH_PLANS as no plans at all instead of its default list.
+# empty OVH_PLANS as no plans at all instead of its default list. A setting missing
+# from settings.yml counts as empty, since that file replaces the whole block.
 - name: Build Stockwatch Environment
   ansible.builtin.set_fact:
     stockwatch_env: >-
-      {{ {'TZ': tz, 'INTERVAL': stockwatch.interval | string, 'NOTIFY_ON': stockwatch.notify_on | string}
+      {{ {'TZ': tz, 'INTERVAL': stockwatch.interval | string, 'NOTIFY_ON': stockwatch.notify_on | string,
+          'ALERT_DISKS': stockwatch.alert_disks | default('hdd', true) | string,
+          'ALERT_MIN_HDD': stockwatch.alert_min_hdd | default(1, true) | string}
          | combine({'OVH_PLANS': stockwatch.ovh_plans | default('', true),
                     'OVH_DCS': stockwatch.ovh_dcs | default('', true),
                     'HBD_PAGES': stockwatch.hbd_pages | default('', true)}
